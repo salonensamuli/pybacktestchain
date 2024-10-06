@@ -147,7 +147,7 @@ class FirstTwoMoments(Information):
         data = data.sort_values(by=[self.company_column, self.time_column])
 
         # expected return per company
-        data['return'] =  data.groupby(self.company_column)[self.adj_close_column].pct_change().mean()
+        data['return'] =  data.groupby(self.company_column)[self.adj_close_column].pct_change() #.mean()
         
         # expected return by company 
         information_set['expected_return'] = data.groupby(self.company_column)['return'].mean().to_numpy()
