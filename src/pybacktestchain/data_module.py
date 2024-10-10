@@ -1,4 +1,4 @@
-
+#%%
 import yfinance as yf
 import pandas as pd 
 from sec_cik_mapper import StockMapper
@@ -73,6 +73,8 @@ def get_stocks_data(tickers, start_date, end_date):
     data = pd.concat(dfs)
     return data
 
+# test 
+# get_stocks_data(['AAPL', 'MSFT'], '2000-01-01', '2020-12-31')
 #---------------------------------------------------------
 # Classes 
 #---------------------------------------------------------
@@ -85,8 +87,8 @@ class DataModule:
 # Interface for the information set 
 @dataclass
 class Information:
-    s: timedelta # Time step (rolling window)
-    data_module: DataModule # Data module
+    s: timedelta = timedelta(days=360) # Time step (rolling window)
+    data_module: DataModule = None # Data module
     time_column: str = 'Date'
     company_column: str = 'ticker'
     adj_close_column: str = 'Close'
@@ -176,3 +178,5 @@ class FirstTwoMoments(Information):
 
 
 
+
+# %%
