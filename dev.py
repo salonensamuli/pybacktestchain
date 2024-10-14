@@ -1,14 +1,16 @@
 #%%
 from pybacktestchain.data_module import  FirstTwoMoments
-from pybacktestchain.broker import Backtest
-from datetime import datetime, timedelta
-import pandas as pd
+from pybacktestchain.broker import Backtest, StopLoss
+from datetime import datetime
+
 backtest = Backtest(
-    initial_date = datetime(2010, 1, 1)+pd.offsets.BMonthEnd(0),
-    final_date = datetime(2020, 1, 1)+pd.offsets.BMonthEnd(0),
+    initial_date = datetime(2010, 1, 1),
+    final_date = datetime(2020, 1, 1),
     information_class = FirstTwoMoments,
+    risk_model=StopLoss
     )
 
-# %%
 backtest.run_backtest()
+
+
 # %%
