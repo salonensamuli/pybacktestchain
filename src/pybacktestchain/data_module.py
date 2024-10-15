@@ -1,4 +1,4 @@
-
+#%%
 import yfinance as yf
 import pandas as pd 
 from sec_cik_mapper import StockMapper
@@ -73,6 +73,8 @@ def get_stocks_data(tickers, start_date, end_date):
     data = pd.concat(dfs)
     return data
 
+# test 
+# get_stocks_data(['AAPL', 'MSFT'], '2000-01-01', '2020-12-31')
 #---------------------------------------------------------
 # Classes 
 #---------------------------------------------------------
@@ -85,57 +87,83 @@ class DataModule:
 # Interface for the information set 
 @dataclass
 class Information:
-    s: timedelta # Time step (rolling window)
-    data_module: DataModule # Data module
+    s: timedelta = timedelta(days=360) # Time step (rolling window)
+    data_module: DataModule = None # Data module
     time_column: str = 'Date'
     company_column: str = 'ticker'
     adj_close_column: str = 'Close'
 
     def slice_data(self, t : datetime):
-         # Get the data module 
+        # Get the data module 
         data = self.data_module.data
         # Get the time step 
         s = self.s
+
+        # Convert both `t` and the data column to timezone-aware, if needed
+        if t.tzinfo is not None:
+            # If `t` is timezone-aware, make sure data is also timezone-aware
+            data[self.time_column] = pd.to_datetime(data[self.time_column]).dt.tz_localize(t.tzinfo.zone, ambiguous='NaT', nonexistent='NaT')
+        else:
+            # If `t` is timezone-naive, ensure the data is timezone-naive as well
+            data[self.time_column] = pd.to_datetime(data[self.time_column]).dt.tz_localize(None)
+        
         # Get the data only between t-s and t
         data = data[(data[self.time_column] >= t - s) & (data[self.time_column] < t)]
         return data
+
+    def get_prices(self, t : datetime):
+        # gets the prices at which the portfolio will be rebalanced at time t 
+        data = self.slice_data(t)
+        
+        # get the last price for each company
+        prices = data.groupby(self.company_column)[self.adj_close_column].last()
+        # to dict, ticker as key price as value 
+        prices = prices.to_dict()
+        return prices
 
     def compute_information(self, t : datetime):  
         pass
 
     def compute_portfolio(self, t : datetime,  information_set : dict):
         pass
+
        
         
 @dataclass
 class FirstTwoMoments(Information):
-
     def compute_portfolio(self, t:datetime, information_set):
-        mu = information_set['expected_return']
-        Sigma = information_set['covariance_matrix']
+        try:
+            mu = information_set['expected_return']
+            Sigma = information_set['covariance_matrix']
+            gamma = 1 # risk aversion parameter
+            n = len(mu)
+            # objective function
+            obj = lambda x: -x.dot(mu) + gamma/2 * x.dot(Sigma).dot(x)
+            # constraints
+            cons = ({'type': 'eq', 'fun': lambda x: np.sum(x) - 1})
+            # bounds, allow short selling, +- inf 
+            bounds = [(0.0, 1.0)] * n
+            # initial guess, equal weights
+            x0 = np.ones(n) / n
+            # minimize
+            res = minimize(obj, x0, constraints=cons, bounds=bounds)
 
-        gamma = 1 # risk aversion parameter
-        n = len(mu)
-        # objective function
-        obj = lambda x: -x.dot(mu) + gamma/2 * x.dot(Sigma).dot(x)
-        # constraints
-        cons = ({'type': 'eq', 'fun': lambda x: np.sum(x) - 1})
-        # bounds, allow short selling, +- inf 
-        bounds = [(None, None)] * n
-        # initial guess, equal weights
-        x0 = np.ones(n) / n
-        # minimize
-        res = minimize(obj, x0, constraints=cons, bounds=bounds)
+            # prepare dictionary 
+            portfolio = {k: None for k in information_set['companies']}
 
-        # prepare dictionary 
-        portfolio = {k: None for k in information_set['companies']}
+            # if converged update
+            if res.success:
+                for i, company in enumerate(information_set['companies']):
+                    portfolio[company] = res.x[i]
+            else:
+                raise Exception("Optimization did not converge")
 
-        # if converged update
-        if res.success:
-            for i, company in enumerate(information_set['companies']):
-                portfolio[company] = res.x[i]
-        
-        return portfolio
+            return portfolio
+        except Exception as e:
+            # if something goes wrong return an equal weight portfolio but let the user know 
+            logging.warning("Error computing portfolio, returning equal weight portfolio")
+            logging.warning(e)
+            return {k: 1/len(information_set['companies']) for k in information_set['companies']}
 
     def compute_information(self, t : datetime):
         # Get the data module 
@@ -147,7 +175,7 @@ class FirstTwoMoments(Information):
         data = data.sort_values(by=[self.company_column, self.time_column])
 
         # expected return per company
-        data['return'] =  data.groupby(self.company_column)[self.adj_close_column].pct_change().mean()
+        data['return'] =  data.groupby(self.company_column)[self.adj_close_column].pct_change() #.mean()
         
         # expected return by company 
         information_set['expected_return'] = data.groupby(self.company_column)['return'].mean().to_numpy()
@@ -167,73 +195,12 @@ class FirstTwoMoments(Information):
         information_set['companies'] = data.columns.to_numpy()
         return information_set
 
-@dataclass
-class TargetReturnMinimumVariance(Information):
-    Rt: float  # target return
 
-    def compute_portfolio(self, t: datetime, information_set):
-        # extract the expected return vector and covariance matrix from the information set
-        mu = information_set['expected_return']
-        Sigma = information_set['covariance_matrix']
-        
-        # number of assets
-        n = len(mu)
 
-        # define the objective function: minimize portfolio variance (x.T @ Sigma @ x)
-        obj = lambda x: x.dot(Sigma).dot(x)
 
-        # constraints:
-        # 1. sum of portfolio weights must be 1
-        cons = [{'type': 'eq', 'fun': lambda x: np.sum(x) - 1}]
-        # 2. expected return of portfolio must be equal to the target return Rt
-        cons.append({'type': 'eq', 'fun': lambda x: x.dot(mu) - self.Rt})
 
-        # no bounds for now (allow short selling)
-        bounds = [(None, None)] * n
 
-        # initial guess for the optimization (equal weights)
-        x0 = np.ones(n) / n
 
-        # scipy's minimize function to solve the optimization problem
-        res = minimize(obj, x0, constraints=cons, bounds=bounds)
 
-        # prepare the portfolio dictionary to store optimal weights
-        portfolio = {company: None for company in information_set['companies']}
 
-        # if the optimizer was successful, assign the weights to each company
-        if res.success:
-            for i, company in enumerate(information_set['companies']):
-                portfolio[company] = res.x[i]
-        else:
-            logging.warning(f"Optimization did not converge at time {t}")
 
-        return portfolio
-
-    def compute_information(self, t: datetime):
-        # same implementation as in FirstTwoMoments class
-        data = self.slice_data(t)
-        information_set = {}
-
-        # sort data by ticker and date
-        data = data.sort_values(by=[self.company_column, self.time_column])
-
-        # compute returns
-        data['return'] = data.groupby(self.company_column)[self.adj_close_column].pct_change()
-
-        # compute expected return by company
-        information_set['expected_return'] = data.groupby(self.company_column)['return'].mean().to_numpy()
-
-        # pivot the data to create a matrix where rows are time points and columns are stock tickers
-        data = data.pivot(index=self.time_column, columns=self.company_column, values=self.adj_close_column)
-
-        # drop rows with missing values
-        data = data.dropna(axis=0)
-
-        # compute the covariance matrix of returns
-        covariance_matrix = data.cov().to_numpy()
-
-        # add expected returns, covariance matrix, and company names to the information set
-        information_set['covariance_matrix'] = covariance_matrix
-        information_set['companies'] = data.columns.to_numpy()
-
-        return information_set

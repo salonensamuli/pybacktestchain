@@ -1,26 +1,16 @@
 #%%
-from pybacktestchain.data_module import get_stocks_data, UNIVERSE_SEC, DataModule, Information, FirstTwoMoments
-from datetime import timedelta
+from pybacktestchain.data_module import  FirstTwoMoments
+from pybacktestchain.broker import Backtest, StopLoss
+from datetime import datetime
 
-# pick 10 random stocks
-import random
-random.seed(42)
-stocks = random.sample(UNIVERSE_SEC, 10)
+backtest = Backtest(
+    initial_date = datetime(2010, 1, 1),
+    final_date = datetime(2020, 1, 1),
+    information_class = FirstTwoMoments,
+    risk_model=StopLoss
+    )
 
-df = get_stocks_data(stocks, '2000-01-01', '2020-12-31')
+backtest.run_backtest()
 
-# Initialize the DataModule
-data_module = DataModule(df)
-
-# Create the FirstTwoMoments object
-info = FirstTwoMoments(s = timedelta(days=360), 
-                       data_module = data_module,
-                       time_column='Date',
-                       company_column='ticker',
-                       adj_close_column='Adj Close')
-# %%
-t = df['Date'].max()
-information_set = info.compute_information(t)
-portfolio = info.compute_portfolio(t, information_set)
 
 # %%
