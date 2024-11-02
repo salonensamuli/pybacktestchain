@@ -79,3 +79,7 @@ class Blockchain:
 def load_blockchain(name: str):
     with open(f'blockchain/{name}.pkl', 'rb') as f:
         return pickle.load(f)
+    
+def remove_blockchain(name: str):
+    import os
+    os.remove(f'blockchain/{name}.pkl')
